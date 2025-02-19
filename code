@@ -1,0 +1,117 @@
+import hashlib
+import json
+import os
+from cryptography.fernet import Fernet
+import re
+import time
+def generate_key():
+    return Fernet.generate_key()
+def load_key():
+    key_path = 'key.txt'
+    if not os.path.exists(key_path):
+        key = generate_key()
+        with open(key_path, 'wb') as file:
+            file.write(key)
+    with open(key_path, 'rb') as file:
+        return file.read()
+def encrypt_data(data, key):
+    cipher = Fernet(key)
+    encrypted_data = cipher.encrypt(data.encode())
+    return encrypted_data
+def decrypt_data(encrypted_data, key):
+    cipher = Fernet(key)
+    decrypted_data = cipher.decrypt(encrypted_data)
+    return decrypted_data.decode()
+def store_passwords(passwords, key):
+    encrypted_passwords = {}
+    for service, password in passwords.items():
+        encrypted_passwords[service] = encrypt_data(password, key).decode('utf-8')  # Convert bytes to UTF-8 encoded string
+    with open('passwords.json', 'w') as file:
+        json.dump(encrypted_passwords, file)
+    print("Passwords stored securely.")
+def retrieve_passwords(key):
+    with open('passwords.json', 'r') as file:
+        encrypted_passwords = json.load(file)
+    passwords = {}
+    for service, encrypted_password in encrypted_passwords.items():
+        passwords[service] = decrypt_data(encrypted_password.encode('utf-8'), key) 
+    return passwords
+def check_password_strength(password):
+    if len(password) <= 6 and re.search("[!@#$%^&*()_+{}:;<>?/.,]", password):
+        return True
+    return False
+def recover_pin():
+    print("To recover your pin, please answer the following security questions:")
+    security_questions = [
+        "What is your mother's maiden name?",
+        "What is the name of your first pet?",
+        "Where were you born?"
+    ]
+    answers = []
+    for question in security_questions:
+        answer = input(question + " ")
+        answers.append(answer)
+    if all(answers):
+        print("Your pin is reset to default. Please set a new pin.")
+        return True
+    else:
+        print("Incorrect answers. Pin recovery failed.")
+        return False
+def input_master_pin_with_limit(attempts_limit, delay):
+    attempts = 0
+    while attempts < attempts_limit:
+        master_pin = input("Enter master pin: ")
+        if not check_password_strength(master_pin):
+            print("Master pin must be at most 6 characters long and contain at least one special character.")
+            attempts += 1
+        else:
+            return master_pin
+    print(f"Exceeded maximum attempts. Try again after {delay} seconds.")
+    time.sleep(delay)
+    return None
+key = load_key()
+max_attempts = 3
+delay_seconds = 10
+
+while True:
+    print("\nChoose an option:")
+    print("1. Store passwords")
+    print("2. Retrieve passwords")
+    print("3. Forget Pin")
+    print("4. Exit")
+
+    choice = input("Enter your choice (1/2/3/4): ")
+
+    if choice == '1':
+        master_pin = input_master_pin_with_limit(max_attempts, delay_seconds)
+        if master_pin is None:
+            continue
+        num_passwords = int(input("Enter the number of passwords you want to store: "))
+        passwords_to_store = {}
+        for _ in range(num_passwords):
+            service = input("Enter the service name: ")
+            password = input(f"Enter the password for {service}: ")
+            passwords_to_store[service] = password
+        store_passwords(passwords_to_store, key)
+
+    elif choice == '2':
+        master_pin = input_master_pin_with_limit(max_attempts, delay_seconds)
+        if master_pin is None:
+            continue
+        retrieved_passwords = retrieve_passwords(key)
+        print("Retrieved passwords:", retrieved_passwords)
+
+    elif choice == '3':
+        confirm = input("Are you sure you want to reset your pin? (yes/no): ")
+        if confirm.lower() == 'yes':
+            if recover_pin():
+                pass
+        else:
+            print("Pin reset canceled.")
+
+    elif choice == '4':
+        print("Exiting program.")
+        break
+
+    else:
+        print("Invalid choice. Please enter 1, 2, 3, or 4.")
